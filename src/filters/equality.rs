@@ -1,0 +1,44 @@
+use ethers::types::{Address, U256, Transaction, U64, Block, TxHash};
+use super::{Filter};
+
+macro_rules! equality_filter {
+    // For fields of type `Option<T>`.
+    ($name:ident, $field:ident, Option<$t:ty>) => {
+        pub struct $name {
+            value: $t,
+        }
+        impl $name {
+            pub fn new(value: $t) -> Self {
+                Self { value }
+            }
+        }
+
+        impl Filter for $name {
+            fn apply(&self, o: &Transaction) -> bool {
+                // If field is some, check if it's equal to the value.
+                if let Some(value) = &o.$field {
+                    *value == self.value
+                } else {
+                    false
+                }
+            }
+        }
+    };
+    // For fields of type `T`.
+    ($name:ident, $field:ident, $t:ty) => {
+        pub struct $name {
+            value: $t,
+        }
+        impl $name {
+            pub fn new(value: $t) -> Self {
+                Self { value }
+            }
+        }
+
+        impl Filter for $name {
+            fn apply(&self, o: &Transaction) -> bool {
+                o.$field == self.value
+            }
+        }
+    };
+}
