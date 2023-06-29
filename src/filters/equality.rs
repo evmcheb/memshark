@@ -42,3 +42,10 @@ macro_rules! equality_filter {
         }
     };
 }
+equality_filter!(FromFilter, from, Address);
+equality_filter!(ToFilter, to, Option<Address>);
+equality_filter!(NonceFilter, nonce, U256);
+equality_filter!(ValueFilter, value, U256);
+equality_filter!(TipFilter, max_priority_fee_per_gas, Option<U256>);
+equality_filter!(GasPriceFilter, gas_price, Option<U256>);
+equality_filter!(MaxFeeFilter, max_fee_per_gas, Option<U256>);

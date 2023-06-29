@@ -1,3 +1,7 @@
+use ethers::types::U256;
+use crate::filters::Filter;
+use ethers::types::Transaction;
+
 macro_rules! range_filter {
     // For fields of type `Option<T>`.
     ($name:ident, $field:ident, Option<$t:ty>) => {
@@ -62,3 +66,8 @@ macro_rules! range_filter {
         }
     };
 }
+range_filter!(ValueRangeFilter, value, U256);
+range_filter!(NonceRangeFilter, nonce, U256);
+range_filter!(TipRangeFilter, max_priority_fee_per_gas, Option<U256>);
+range_filter!(GasPriceRangeFilter, gas_price, Option<U256>);
+range_filter!(MaxFeeRangeFilter, max_fee_per_gas, Option<U256>);

@@ -36,23 +36,23 @@ async fn main() -> eyre::Result<()> {
         Tx(args) => {
             let mut filters = Filters::new();
             if let Some(from) = args.from {
-                filters.add_filter(Box::new(filters::FromFilter::new(from)));
+                filters.add_filter(Box::new(filters::equality::FromFilter::new(from)));
             }
             if let Some(to) = args.to {
-                filters.add_filter(Box::new(filters::ToFilter::new(to)));
+                filters.add_filter(Box::new(filters::equality::ToFilter::new(to)));
             }
             if let Some(value) = args.value {
-                filters.add_filter(Box::new(filters::ValueFilter::new(value)));
+                filters.add_filter(Box::new(filters::equality::ValueFilter::new(value)));
             }
             if let Some(nonce) = args.nonce {
-                filters.add_filter(Box::new(filters::NonceFilter::new(nonce)));
+                filters.add_filter(Box::new(filters::equality::NonceFilter::new(nonce)));
             }
             if let Some(tip) = args.tip {
-                filters.add_filter(Box::new(filters::TipFilter::new(tip)));
+                filters.add_filter(Box::new(filters::equality::TipFilter::new(tip)));
             }
             if let Some(gas_price) = args.gas_price {
-                filters.add_filter(Box::new(filters::GasPriceFilter::new(gas_price)));
-                filters.add_filter(Box::new(filters::MaxFeeFilter::new(gas_price)));
+                filters.add_filter(Box::new(filters::equality::GasPriceFilter::new(gas_price)));
+                filters.add_filter(Box::new(filters::equality::MaxFeeFilter::new(gas_price)));
             }
             if let Some(sig) = args.sig {
                 let sig = HumanReadableParser::parse_function(&sig)?.short_signature();
@@ -67,17 +67,19 @@ async fn main() -> eyre::Result<()> {
             }
 
             if args.value_gt.is_some() || args.value_lt.is_some() {
-                filters.add_filter(Box::new(filters::ValueRangeFilter::new(args.value_gt, args.value_lt)));
+                filters.add_filter(Box::new(filters::range::ValueRangeFilter::new(args.value_gt, args.value_lt)));
             }
             if args.nonce_gt.is_some() || args.nonce_lt.is_some() {
-                filters.add_filter(Box::new(filters::NonceRangeFilter::new(args.nonce_gt, args.nonce_lt)));
+                filters.add_filter(Box::new(filters::range::NonceRangeFilter::new(args.nonce_gt, args.nonce_lt)));
             }
             if args.tip_gt.is_some() || args.tip_lt.is_some() {
-                filters.add_filter(Box::new(filters::TipRangeFilter::new(args.tip_gt, args.tip_lt)));
+                filters.add_filter(Box::new(filters::range::TipRangeFilter::new(args.tip_gt, args.tip_lt)));
             }
             if args.gas_price_gt.is_some() || args.gas_price_lt.is_some() {
-                filters.add_filter(Box::new(filters::GasPriceRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
-                filters.add_filter(Box::new(filters::MaxFeeRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
+                filters.add_filter(Box::new(filters::range::GasPriceRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
+                filters.add_filter(Box::new(filters::range::MaxFeeRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
+            }
+            if args.with_missed {
             }
 
             let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
