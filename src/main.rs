@@ -66,6 +66,8 @@ fn handle_block(block: Block<H256>) {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    // Read .env file
+    dotenv::dotenv().ok();
     let args = App::parse();
     // Connect to rpc url
     match args.command {
