@@ -53,9 +53,9 @@ pub struct TxArgs {
     pub to: Option<Address>,
     #[clap(long, short)]
     pub from: Option<Address>,
+
     #[clap(long, short)]
     pub sig: Option<String>,
-
     #[clap(long, short, value_parser=strip_0x_prefix, conflicts_with_all=&["data_re"])]
     pub data: Option<String>,
     #[clap(long)]
@@ -88,6 +88,13 @@ pub struct TxArgs {
     pub gas_price_gt: Option<U256>,
     #[clap(long, value_parser=parse_gwei)]
     pub gas_price_lt: Option<U256>,
+
+    #[clap(long)]
+    pub touches: Option<Address>,
+    #[clap(long, value_parser=strip_0x_prefix, conflicts_with_all=&["touches_data"])]
+    pub touches_sig: Option<String>,
+    #[clap(long, value_parser=strip_0x_prefix)]
+    pub touches_data: Option<String>,
 
     #[clap(flatten)]
     pub rpc: RpcOpts,

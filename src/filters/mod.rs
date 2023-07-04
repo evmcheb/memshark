@@ -2,7 +2,6 @@ pub mod equality;
 #[macro_use]
 pub mod range;
 pub mod calldata;
-pub mod cache;
 use ethers::types::{Transaction, Address, U256};
 
 pub trait Filter {

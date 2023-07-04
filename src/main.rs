@@ -1,15 +1,63 @@
 mod cmd;
 mod filters;
 
+use std::{sync::Arc, rc::Rc, default, collections::HashMap};
+
 use clap::{Parser};
 use cmd::watch::{App, Command::{WithBlock, Tx}};
-use ethers::{providers::{Provider, Ws, Middleware, StreamExt}, types::{Transaction, Block, H256,TxHash}, utils::hex};
+use ethers::{providers::{Provider, Ws, Middleware, StreamExt}, types::{Transaction, Block, H256,TxHash, BlockId, BlockNumber, GethDebugTracingCallOptions, GethDebugTracingOptions, GethDebugBuiltInTracerType, GethDebugTracerType, CallConfig, GethDebugTracerConfig, GethDebugBuiltInTracerConfig, Address, Bytes, NameOrAddress}, utils::hex};
 use ethers::abi::HumanReadableParser;
+use ethers::types::GethTrace::{Known, Unknown};
+use ethers::types::GethTraceFrame::CallTracer;
 
 use crate::filters::Filters;
 
-fn handle_tx(tx: Transaction) {
-    println!("{:?}", tx);
+async fn get_flattened_trace(tx: Transaction, provider: Provider<Ws>) -> Option<HashMap<Address, Bytes>> {
+    let mut opts = GethDebugTracingCallOptions::default();
+    opts.tracing_options.tracer_config =
+        Some(GethDebugTracerConfig::BuiltInTracer(GethDebugBuiltInTracerConfig::CallTracer(
+            CallConfig { only_top_call: Some(false), with_log: Some(false) },
+        )));
+    opts.tracing_options.timeout = Some("1s".to_string());
+    opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(GethDebugBuiltInTracerType::CallTracer));
+    let block_id = BlockId::Number(BlockNumber::Latest);
+    let traces = provider.debug_trace_call(&tx, Some(block_id), opts).await;
+    if let Ok(traces) = traces {
+        println!("got tx for {:?}", tx.hash);
+        // Recursively flatten the CallFrame
+        // mapping of To -> Bytes
+        let mut flattened: HashMap<Address, Bytes> = HashMap::new();
+        fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, Bytes>) {
+            match &frame.to {
+                Some(a) => {
+                    if let NameOrAddress::Address(addr) = a {
+                        flattened.insert(*addr, frame.input.clone());
+                    }
+                },
+                None => {
+                    // Contract creations are ignored
+                },
+            }
+            if let Some(child_calls) = &frame.calls {
+                for child in child_calls {
+                    flatten(child, flattened);
+                }
+            }
+        }
+        if let Known(known_trace) = traces {
+            println!("got known trace for {:?}", tx.hash);
+            if let CallTracer(t) = known_trace {
+                println!("got call tracer for {:?}", tx.hash);
+                flatten(&t, &mut flattened);
+                return Some(flattened)
+            } else {
+                println!("got not callframe for {:?}", tx.hash);
+            }
+        } else {
+            println!("got unknown trace for {:?}", tx.hash);
+        }
+    }
+    None
 }
 
 fn handle_block(block: Block<H256>) {
@@ -19,7 +67,6 @@ fn handle_block(block: Block<H256>) {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let args = App::parse();
-    println!("Hello, world! {:?}", args);
     // Connect to rpc url
     match args.command {
         WithBlock(args) => {
@@ -79,20 +126,50 @@ async fn main() -> eyre::Result<()> {
                 filters.add_filter(Box::new(filters::range::GasPriceRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
                 filters.add_filter(Box::new(filters::range::MaxFeeRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
             }
-            if args.with_missed {
-            }
 
             let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
             if args.rpc.legacy {
                 let mut stream = provider.subscribe_pending_txs().await?;
-                loop {
+                'next: loop {
                     let txn_hash = stream.next().await;
                     let txn = provider.get_transaction(txn_hash.unwrap()).await?;
                     match txn {
                         None => println!("No transaction found"),
                         Some(txn) => {
-                            if filters.apply(&txn) {
-                                println!("{}", serde_json::to_string(&txn)?);
+                            if !filters.apply(&txn) {
+                                continue;
+                            }
+                            let touches = match args.touches {
+                                Some(touches) => touches,
+                                None => {
+                                    println!("{}", serde_json::to_string(&txn)?);
+                                    continue;
+                                },
+                            };
+                        
+                            let flattened = match get_flattened_trace(txn.clone(), provider.clone()).await {
+                                Some(flattened) => flattened,
+                                None => {
+                                    println!("No trace found for {:?}", txn.hash);
+                                    continue;
+                                },
+                            };
+                        
+                            for (addr, input) in &flattened {
+                                println!("{:?} {}", addr, hex::encode(input));
+                                if touches == *addr {
+                                    let input_hex = hex::encode(input);
+                                    let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
+                                        && args.touches_sig.as_ref().map_or(true, |sig| {
+                                            let sig = HumanReadableParser::parse_function(&sig).unwrap().short_signature();
+                                            input.starts_with(&sig)
+                                        });
+                        
+                                    if matched {
+                                        println!("{}", serde_json::to_string(&txn)?);
+                                        continue 'next;
+                                    }
+                                }
                             }
                         },
                     }
@@ -105,6 +182,18 @@ async fn main() -> eyre::Result<()> {
                         None => println!("No transaction found"),
                         Some(txn) => {
                             if filters.apply(&txn) {
+                                if args.touches.is_some() {
+                                    let geth_options = GethDebugTracingCallOptions {
+                                        state_overrides: None,
+                                        tracing_options: GethDebugTracingOptions {
+                                            tracer: Some(GethDebugTracerType::BuiltInTracer(GethDebugBuiltInTracerType::CallTracer)),
+                                            ..Default::default()
+                                        }
+                                    };
+                                    let block_id = BlockId::Number(BlockNumber::Latest);
+                                    let traces = provider.debug_trace_call(&txn, Some(block_id), geth_options).await?;
+                                    println!("{:?}", traces);
+                                }
                                 println!("{}", serde_json::to_string(&txn)?);
                             }
                         }
