@@ -152,7 +152,6 @@ async fn main() -> eyre::Result<()> {
                             };
                         
                             for (addr, input) in &flattened {
-                                println!("{:?} {}", addr, hex::encode(input));
                                 if touches == *addr {
                                     let input_hex = hex::encode(input);
                                     let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
@@ -197,7 +196,6 @@ async fn main() -> eyre::Result<()> {
                             };
                         
                             for (addr, input) in &flattened {
-                                println!("{:?} {}", addr, hex::encode(input));
                                 if touches == *addr {
                                     let input_hex = hex::encode(input);
                                     let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
