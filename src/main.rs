@@ -23,7 +23,6 @@ async fn get_flattened_trace(tx: Transaction, provider: Provider<Ws>) -> Option<
     let block_id = BlockId::Number(BlockNumber::Latest);
     let traces = provider.debug_trace_call(&tx, Some(block_id), opts).await;
     if let Ok(traces) = traces {
-        println!("got tx for {:?}", tx.hash);
         // Recursively flatten the CallFrame
         // mapping of To -> Bytes
         let mut flattened: HashMap<Address, Bytes> = HashMap::new();
@@ -45,16 +44,10 @@ async fn get_flattened_trace(tx: Transaction, provider: Provider<Ws>) -> Option<
             }
         }
         if let Known(known_trace) = traces {
-            println!("got known trace for {:?}", tx.hash);
             if let CallTracer(t) = known_trace {
-                println!("got call tracer for {:?}", tx.hash);
                 flatten(&t, &mut flattened);
                 return Some(flattened)
-            } else {
-                println!("got not callframe for {:?}", tx.hash);
             }
-        } else {
-            println!("got unknown trace for {:?}", tx.hash);
         }
     }
     None
@@ -78,7 +71,7 @@ async fn main() -> eyre::Result<()> {
             //match block {
                 //None => println!("No block found"),
                 //Some(block) => {
-                    //filters.apply()
+                    //filter.apply()
                 //},
             //}
         }
@@ -136,7 +129,8 @@ async fn main() -> eyre::Result<()> {
                     let txn_hash = stream.next().await;
                     let txn = provider.get_transaction(txn_hash.unwrap()).await?;
                     match txn {
-                        None => println!("No transaction found"),
+                        // None => println!("No transaction found"),
+                        None => continue,
                         Some(txn) => {
                             if !filters.apply(&txn) {
                                 continue;
@@ -152,7 +146,7 @@ async fn main() -> eyre::Result<()> {
                             let flattened = match get_flattened_trace(txn.clone(), provider.clone()).await {
                                 Some(flattened) => flattened,
                                 None => {
-                                    println!("No trace found for {:?}", txn.hash);
+                                    // println!("No trace found for {:?}", txn.hash);
                                     continue;
                                 },
                             };
@@ -178,27 +172,47 @@ async fn main() -> eyre::Result<()> {
                 }
             } else {
                 let mut stream = provider.subscribe_full_pending_txs().await?;
-                loop {
+                'next: loop {
                     let txn = stream.next().await;
                     match txn {
-                        None => println!("No transaction found"),
+                        None => continue,
                         Some(txn) => {
-                            if filters.apply(&txn) {
-                                if args.touches.is_some() {
-                                    let geth_options = GethDebugTracingCallOptions {
-                                        state_overrides: None,
-                                        tracing_options: GethDebugTracingOptions {
-                                            tracer: Some(GethDebugTracerType::BuiltInTracer(GethDebugBuiltInTracerType::CallTracer)),
-                                            ..Default::default()
-                                        }
-                                    };
-                                    let block_id = BlockId::Number(BlockNumber::Latest);
-                                    let traces = provider.debug_trace_call(&txn, Some(block_id), geth_options).await?;
-                                    println!("{:?}", traces);
-                                }
-                                println!("{}", serde_json::to_string(&txn)?);
+                            if !filters.apply(&txn) {
+                                continue;
                             }
-                        }
+                            let touches = match args.touches {
+                                Some(touches) => touches,
+                                None => {
+                                    println!("{}", serde_json::to_string(&txn)?);
+                                    continue;
+                                },
+                            };
+                        
+                            let flattened = match get_flattened_trace(txn.clone(), provider.clone()).await {
+                                Some(flattened) => flattened,
+                                None => {
+                                    // println!("No trace found for {:?}", txn.hash);
+                                    continue;
+                                },
+                            };
+                        
+                            for (addr, input) in &flattened {
+                                println!("{:?} {}", addr, hex::encode(input));
+                                if touches == *addr {
+                                    let input_hex = hex::encode(input);
+                                    let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
+                                        && args.touches_sig.as_ref().map_or(true, |sig| {
+                                            let sig = HumanReadableParser::parse_function(&sig).unwrap().short_signature();
+                                            input.starts_with(&sig)
+                                        });
+                        
+                                    if matched {
+                                        println!("{}", serde_json::to_string(&txn)?);
+                                        continue 'next;
+                                    }
+                                }
+                            }
+                        },
                     }
                 }
             }
