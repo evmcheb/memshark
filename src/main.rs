@@ -138,7 +138,8 @@ async fn main() -> eyre::Result<()> {
                             let touches = match args.touches {
                                 Some(touches) => touches,
                                 None => {
-                                    println!("{}", serde_json::to_string(&txn)?);
+                                    // println!("{}", serde_json::to_string(&txn)?);
+                                    println!("{}", hex::encode(txn.rlp()));
                                     continue;
                                 },
                             };
@@ -184,7 +185,8 @@ async fn main() -> eyre::Result<()> {
                             let touches = match args.touches {
                                 Some(touches) => touches,
                                 None => {
-                                    println!("{}", serde_json::to_string(&txn)?);
+                                    // println!("{}", serde_json::to_string(&txn)?);
+                                    println!("{}", hex::encode(txn.rlp()));
                                     continue;
                                 },
                             };
