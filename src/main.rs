@@ -161,7 +161,9 @@ async fn main() -> eyre::Result<()> {
                                         });
                         
                                     if matched {
-                                        println!("{}", serde_json::to_string(&txn)?);
+                                        // println!("{}", serde_json::to_string(&txn)?);
+                                        // print RLP encoded transaction
+                                        println!("{}", hex::encode(txn.rlp()));
                                         continue 'next;
                                     }
                                 }
@@ -205,7 +207,8 @@ async fn main() -> eyre::Result<()> {
                                         });
                         
                                     if matched {
-                                        println!("{}", serde_json::to_string(&txn)?);
+                                        //println!("{}", serde_json::to_string(&txn)?);
+                                        println!("{}", hex::encode(txn.rlp()));
                                         continue 'next;
                                     }
                                 }

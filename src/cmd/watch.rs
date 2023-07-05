@@ -36,7 +36,7 @@ pub struct App {
 
 #[derive(Debug, Args)]
 pub struct RpcOpts {
-    #[clap(long = "rpc-url", short = 'r', env = "ETH_RPC_URL")]
+    #[clap(long = "rpc-url", short = 'r', env = "ETH_RPC_WSS")]
     pub rpc_url: String,
 
     #[clap(long, short)]
