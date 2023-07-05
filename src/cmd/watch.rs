@@ -45,6 +45,8 @@ pub struct RpcOpts {
 
 #[derive(Debug, Args)]
 pub struct TxArgs {
+    #[clap(long, short)]
+    pub n: Option<u64>,
 
     #[clap(long)]
     pub with_missed: bool,

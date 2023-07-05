@@ -123,6 +123,7 @@ async fn main() -> eyre::Result<()> {
             }
 
             let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
+            let mut count: u64 = 0;
             if args.rpc.legacy {
                 let mut stream = provider.subscribe_pending_txs().await?;
                 'next: loop {
@@ -140,6 +141,12 @@ async fn main() -> eyre::Result<()> {
                                 None => {
                                     // println!("{}", serde_json::to_string(&txn)?);
                                     println!("{}", hex::encode(txn.rlp()));
+                                    if let Some(n) = args.n {
+                                        count += 1;
+                                        if count == n {
+                                            break;
+                                        }
+                                    }
                                     continue;
                                 },
                             };
@@ -165,6 +172,12 @@ async fn main() -> eyre::Result<()> {
                                         // println!("{}", serde_json::to_string(&txn)?);
                                         // print RLP encoded transaction
                                         println!("{}", hex::encode(txn.rlp()));
+                                        if let Some(n) = args.n {
+                                            count += 1;
+                                            if count == n {
+                                                break;
+                                            }
+                                        }
                                         continue 'next;
                                     }
                                 }
@@ -187,6 +200,12 @@ async fn main() -> eyre::Result<()> {
                                 None => {
                                     // println!("{}", serde_json::to_string(&txn)?);
                                     println!("{}", hex::encode(txn.rlp()));
+                                    if let Some(n) = args.n {
+                                        count += 1;
+                                        if count == n {
+                                            break;
+                                        }
+                                    }
                                     continue;
                                 },
                             };
@@ -211,6 +230,12 @@ async fn main() -> eyre::Result<()> {
                                     if matched {
                                         //println!("{}", serde_json::to_string(&txn)?);
                                         println!("{}", hex::encode(txn.rlp()));
+                                        if let Some(n) = args.n {
+                                            count += 1;
+                                            if count == n {
+                                                break;
+                                            }
+                                        }
                                         continue 'next;
                                     }
                                 }
