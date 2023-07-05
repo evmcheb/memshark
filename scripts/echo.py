@@ -13,7 +13,23 @@ import dotenv
 
 import requests
 
-RELAY = "https://relay.flashbots.net"
+RELAYS = [
+    "https://builder0x69.io",
+    "https://rpc.beaverbuild.org",
+    "https://rsync-builder.xyz",
+    "https://relay.flashbots.net",
+    "https://api.blocknative.com/v1/auction" ,
+    "https://builder.gmbit.co/rpc",
+    "https://eth-builder.com",
+    "https://rpc.titanbuilder.xyz",
+    "https://buildai.net",
+    "https://rpc.payload.de",
+    #"https://mev.api.blxrbdn.com",
+    "https://rpc.lightspeedbuilder.info",
+    "https://rpc.nfactorial.xyz",
+    "https://boba-builder.com/searcher",
+    "https://rpc.f1b.io"
+]
 
 dotenv.load_dotenv()
 
@@ -32,7 +48,7 @@ dotenv.load_dotenv()
   ]
 }
 """
-def call_bundle(txns, block):
+def call_bundle(txns, block, relay):
     req = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -53,14 +69,12 @@ def call_bundle(txns, block):
     print(signature)
     header = {
         "X-Flashbots-Signature": signature,
+        "Content-Type": "application/json"
     }
-    r = requests.post(RELAY, data=body, headers=header)
-    data = r.json()
-    if "result" not in data:
-        raise Exception("no result")
-    return data
+    r = requests.post(relay, data=body, headers=header)
+    return r.content
 
-def send_bundle(txns, block):
+def send_bundle(txns, block, relay):
     req = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -77,12 +91,11 @@ def send_bundle(txns, block):
     signature = FB_SIGNER.address+":"+FB_SIGNER.sign_message(message).signature.hex()
     header = {
         "X-Flashbots-Signature": signature,
+        "Content-Type": "application/json"
     }
-    r = requests.post(RELAY, data=body, headers=header)
-    data = r.json()
-    if "result" not in data:
-        raise Exception("no result")
-    return data
+    r = requests.post(relay, data=body, headers=header)
+    print(relay, r.content)
+    return r.content
     
 
 FB_SIGNER = Account.from_key(os.environ.get("FLASHBOTS_SIGNER"))
@@ -128,6 +141,10 @@ block = w3.eth.block_number
 #except Exception as e:
     #print("simulation failed")
     #print(e)
-
-send_result = send_bundle(bundle, block + 1)
-print(f"send result {send_result} aiming for {block + 1}")
+# use concurrent.futures to send to multiple relays
+from concurrent.futures import ThreadPoolExecutor
+with ThreadPoolExecutor(max_workers=20) as executor:
+    for relay in RELAYS:
+        executor.submit(send_bundle, bundle, block + 1, relay)
+        print(f"{relay} sent")
+print("aiming for block", block + 1)
