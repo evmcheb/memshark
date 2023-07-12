@@ -8,6 +8,7 @@ web3 = "*"
 flashbots = "*"
 eth-account = "*"
 python-dotenv = "*"
+click = "*"
 
 [dev-packages]
 
