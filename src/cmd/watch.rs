@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use ethers::types::{U256, Address, U64};
 
@@ -32,6 +32,13 @@ pub fn strip_0x_prefix(s: &str) -> Result<String, &'static str> {
 pub struct App {
     #[clap(subcommand)]
     pub command: Command,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum OutputMode {
+    Rlp,
+    Hash,
+    Json
 }
 
 #[derive(Debug, Args)]
@@ -100,6 +107,9 @@ pub struct TxArgs {
 
     #[clap(flatten)]
     pub rpc: RpcOpts,
+
+    #[clap(long, value_enum, default_value_t=OutputMode::Rlp)]
+    pub output: OutputMode,
 }
 
 #[derive(Debug, Args)]

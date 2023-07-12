@@ -40,8 +40,8 @@ pub struct RegexFilter {
     re: Regex
 }
 impl RegexFilter {
-    pub fn new(s: String) -> Self {
-        Self { re: Regex::new(&s).unwrap() }
+    pub fn new(s: &String) -> Self {
+        Self { re: Regex::new(s).unwrap() }
     }
 }
 impl Filter for RegexFilter {
