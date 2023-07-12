@@ -48,13 +48,6 @@ def run(token, amount, bribe, simulate):
     print(f"Account: {ACC.address}")
     print(f"Gas price: {price/1e9:.3f}")
 
-    # read rlp-encoded from sys.stdin
-    rlp = sys.stdin.readline().strip()
-    # hex string to HexBytes
-    rlp = HexBytes(rlp)
-
-    #price = int(w3.eth.gas_price * 1.5)
-
     tx = V2_CONTRACT.functions.swapExactETHForTokens(0, [WETH, token], ACC.address, 10000000000).build_transaction({
         'from': ACC.address,
         'value': amount,
@@ -64,10 +57,14 @@ def run(token, amount, bribe, simulate):
         'nonce': w3.eth.get_transaction_count(ACC.address),
         'chainId': 1
     })
-    print(tx)
 
     # sign the transaction
     tx_signed = ACC.sign_transaction(tx)
+    print(tx)
+    # read rlp-encoded from sys.stdin
+    rlp = sys.stdin.readline().strip()
+    # hex string to HexBytes
+    rlp = HexBytes(rlp)
 
     bundle = [
         rlp.hex(),
