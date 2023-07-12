@@ -40,7 +40,7 @@ rlp = sys.stdin.readline().strip()
 # hex string to HexBytes
 rlp = HexBytes(rlp)
 
-price = BRIBE_ETH / EST_GAS
+price = int(BRIBE_ETH / EST_GAS)
 print(price/1e9)
 
 #price = int(w3.eth.gas_price * 1.5)
