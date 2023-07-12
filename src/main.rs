@@ -81,7 +81,8 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
             if let Some(n) = args.n {
                 *count += 1;
                 if *count == n {
-                    return Err(eyre::eyre!("Reached the specified transaction count"));
+                    // exit silently
+                    std::process::exit(0);
                 }
             }
             return Ok(());
@@ -110,8 +111,7 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
                 if let Some(n) = args.n {
                     *count += 1;
                     if *count == n {
-                        // Exit the program
-                        return Err(eyre::eyre!("Reached the specified transaction count"));
+                        std::process::exit(0);
                     }
                 }
                 return Ok(());
