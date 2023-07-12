@@ -34,10 +34,10 @@ ACC: LocalAccount = Account.from_key(os.environ.get("ETH_SIGNER_KEY"))
 
 # print a summary of the account
 @click.command()
-@click.option('token', help='Token contract address', required=True)
-@click.option('amount', help='Amount of ETH to buy with', required=True)
-@click.option('bribe', help='Amount of ETH to use in the gas bribe', required=True)
-@click.option('simulate', help='Simulate the bundle', is_flag=True, default=False)
+@click.option('--token', help='Token contract address', required=True)
+@click.option('--amount', help='Amount of ETH to buy with', required=True)
+@click.option('--bribe', help='Amount of ETH to use in the gas bribe', required=True)
+@click.option('--simulate', help='Simulate the bundle', is_flag=True)
 def run(token, amount, bribe, simulate):
     token = Web3.to_checksum_address(token)
     bribe = Web3.to_wei(bribe, "ether")
