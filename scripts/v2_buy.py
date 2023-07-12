@@ -34,10 +34,11 @@ ACC: LocalAccount = Account.from_key(os.environ.get("ETH_SIGNER_KEY"))
 
 # print a summary of the account
 @click.command()
-@click.option('--token', help='Token contract address', required=True)
-@click.option('--amount', help='Amount of ETH to buy with', required=True)
-@click.option('--bribe', help='Amount of ETH to use in the gas bribe', required=True)
-def run(token, amount, bribe):
+@click.option('token', help='Token contract address', required=True)
+@click.option('amount', help='Amount of ETH to buy with', required=True)
+@click.option('bribe', help='Amount of ETH to use in the gas bribe', required=True)
+@click.option('simulate', help='Simulate the bundle', is_flag=True, default=False)
+def run(token, amount, bribe, simulate):
     token = Web3.to_checksum_address(token)
     bribe = Web3.to_wei(bribe, "ether")
     amount = Web3.to_wei(amount, "ether")
@@ -74,7 +75,8 @@ def run(token, amount, bribe):
     ]
     print(bundle)
 
-    print(fbutil.call_bundle(bundle, w3.eth.block_number, "https://relay.flashbots.net"))
+    if simulate:
+        print(fbutil.call_bundle(bundle, w3.eth.block_number, "https://relay.flashbots.net"))
 
     block = w3.eth.block_number
     fbutil.send_all(bundle, block + 1)
