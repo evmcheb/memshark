@@ -17,31 +17,34 @@ path = os.path.join(my_path, "./abis/v2router.abi")
 
 dotenv.load_dotenv()
 
-with open(path) as f:
-    V2_ROUTER_ABI = json.load(f)
-
-V2_ROUTER = Web3.to_checksum_address("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-TOKEN_TO_BUY = Web3.to_checksum_address("0x6982508145454Ce325dDbE47a25d4ec3d2311933")
-ETH_IN = Web3.to_wei(0.01, "ether")
-BRIBE_ETH = Web3.to_wei(0.01, "ether")
-EST_GAS = 150_000
-WETH = Web3.to_checksum_address("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-
-ACC: LocalAccount = Account.from_key(os.environ.get("ETH_SIGNER_KEY"))
-print(ACC.address)
-
 w3 = Web3(HTTPProvider(os.environ.get("ETH_RPC_URL")))
 flashbot(w3, fbutil.FB_SIGNER)
 
+with open(path) as f:
+    V2_ROUTER_ABI = json.load(f)
+
+TOKEN_TO_BUY = Web3.to_checksum_address(input("Token contract address: "))
+ETH_IN = Web3.to_wei(float(input("ETH in: ")), "ether")
+BRIBE_ETH = Web3.to_wei(float(input("ETH bribe: ")), "ether")
+
+EST_GAS = 150_000
+WETH = Web3.to_checksum_address("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+V2_ROUTER = Web3.to_checksum_address("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
+
+price = int(BRIBE_ETH / EST_GAS)
+
 V2_CONTRACT = w3.eth.contract(V2_ROUTER, abi=V2_ROUTER_ABI)
+
+ACC: LocalAccount = Account.from_key(os.environ.get("ETH_SIGNER_KEY"))
+# print a summary of the account
+print(f"Waiting for stdin to snipe {TOKEN_TO_BUY} for {ETH_IN/1e18:.3f} ETH with {BRIBE_ETH/1e18:.3f} ETH bribe")
+print(f"Account: {ACC.address}")
+print(f"Gas price: {price/1e9:.3f}")
 
 # read rlp-encoded from sys.stdin
 rlp = sys.stdin.readline().strip()
 # hex string to HexBytes
 rlp = HexBytes(rlp)
-
-price = int(BRIBE_ETH / EST_GAS)
-print(price/1e9)
 
 #price = int(w3.eth.gas_price * 1.5)
 
