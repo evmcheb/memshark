@@ -22,6 +22,9 @@ with open(path) as f:
 
 V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 TOKEN_TO_BUY = "0x6982508145454Ce325dDbE47a25d4ec3d2311933"
+ETH_IN = Web3.to_wei(0.01, "ether")
+BRIBE_ETH = Web3.to_wei(0.01, "ether")
+EST_GAS = 150000
 
 ACC: LocalAccount = Account.from_key(os.environ.get("ETH_SIGNER_KEY"))
 print(ACC.address)
@@ -36,7 +39,7 @@ rlp = sys.stdin.readline().strip()
 # hex string to HexBytes
 rlp = HexBytes(rlp)
 
-price = int(w3.eth.gas_price * 1.5)
+#price = int(w3.eth.gas_price * 1.5)
 print(price/1e9)
 
 # swap tx
@@ -44,8 +47,8 @@ print(price/1e9)
 WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 tx = V2_CONTRACT.functions.swapExactETHForTokens(0, [WETH, w3.to_checksum_address(TOKEN_TO_BUY)], ACC.address, 10000000000).build_transaction({
     'from': ACC.address,
-    'value': w3.to_wei(0.1, "ether"),
-    'gas': 1000000,
+    'value': ETH_IN,
+    'gas': 500000,
     "maxFeePerGas": price,
     "maxPriorityFeePerGas": price,
     'nonce': w3.eth.get_transaction_count(ACC.address),
