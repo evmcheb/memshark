@@ -19,9 +19,7 @@ fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, By
                 flattened.insert(*addr, frame.input.clone());
             }
         },
-        None => {
-            // Contract creations are ignored
-        },
+        None => {}, // Ignore contract creations
     }
     if let Some(child_calls) = &frame.calls {
         for child in child_calls {
@@ -102,7 +100,7 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
             let input_hex = hex::encode(input);
             let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
                 && args.touches_sig.as_ref().map_or(true, |sig| {
-                    let sig = HumanReadableParser::parse_function(&sig).unwrap().short_signature();
+                    let sig = HumanReadableParser::parse_function(sig).unwrap().short_signature();
                     input.starts_with(&sig)
                 });
 
@@ -167,7 +165,7 @@ async fn main() -> eyre::Result<()> {
                 filters.add_filter(Box::new(filters::calldata::SigFilter::new(sig)));
             }
             if let Some(data) = &args.data {
-                let data = hex::decode(&data)?;
+                let data = hex::decode(data)?;
                 filters.add_filter(Box::new(filters::calldata::DataFilter::new(data)));
             }
             if let Some(re) = &args.data_re {
