@@ -2,7 +2,7 @@ pub mod equality;
 #[macro_use]
 pub mod range;
 pub mod calldata;
-use ethers::types::{Transaction, Address, U256};
+use ethers::types::{Transaction};
 
 pub trait Filter {
     fn apply(&self, tx: &Transaction) -> bool;

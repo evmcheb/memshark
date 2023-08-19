@@ -1,13 +1,13 @@
 mod cmd;
 mod filters;
 
-use std::{sync::Arc, rc::Rc, default, collections::HashMap};
+use std::{collections::HashMap};
 
 use clap::{Parser};
 use cmd::watch::{App, Command::{WithBlock, Tx}, OutputMode};
-use ethers::{providers::{Provider, Ws, Middleware, StreamExt}, types::{Transaction, Block, H256,TxHash, BlockId, BlockNumber, GethDebugTracingCallOptions, GethDebugTracingOptions, GethDebugBuiltInTracerType, GethDebugTracerType, CallConfig, GethDebugTracerConfig, GethDebugBuiltInTracerConfig, Address, Bytes, NameOrAddress}, utils::hex};
+use ethers::{providers::{Provider, Ws, Middleware, StreamExt}, types::{Transaction, BlockId, BlockNumber, GethDebugTracingCallOptions, GethDebugBuiltInTracerType, GethDebugTracerType, CallConfig, GethDebugTracerConfig, GethDebugBuiltInTracerConfig, Address, Bytes, NameOrAddress}, utils::hex};
 use ethers::abi::HumanReadableParser;
-use ethers::types::GethTrace::{Known, Unknown};
+use ethers::types::GethTrace::{Known};
 use ethers::types::GethTraceFrame::CallTracer;
 
 use crate::filters::Filters;
@@ -130,7 +130,7 @@ async fn main() -> eyre::Result<()> {
     let args = App::parse();
     // Connect to rpc url
     match args.command {
-        WithBlock(args) => {
+        WithBlock(_args) => {
             //let mut filters = Filters:
             //let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
             //let block = provider.get_block(ethers::types::BlockNumber::Latest).await?;

@@ -1,4 +1,4 @@
-use ethers::types::{Address, U256, Transaction, U64, Block, TxHash};
+use ethers::types::{Address, U256, Transaction};
 use super::{Filter};
 
 macro_rules! equality_filter {
