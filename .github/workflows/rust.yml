@@ -1,11 +1,12 @@
-name: Manual Release
+name: Build on tags
 
 permissions:
   contents: write
 
 on:
-  workflow_dispatch:
-
+  push:
+    tags:
+      - v[0-9]+.*
 jobs:
   create-release:
     runs-on: ubuntu-latest
