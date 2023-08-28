@@ -1,7 +1,6 @@
 mod cmd;
 mod filters;
-
-use std::collections::HashMap;
+mod trace;
 
 use clap::Parser;
 use cmd::watch::{
@@ -10,66 +9,13 @@ use cmd::watch::{
     OutputMode,
 };
 use ethers::abi::HumanReadableParser;
-use ethers::types::GethTrace::Known;
-use ethers::types::GethTraceFrame::CallTracer;
 use ethers::{
     providers::{Middleware, Provider, StreamExt, Ws},
-    types::{
-        Address, BlockId, BlockNumber, Bytes, CallConfig, GethDebugBuiltInTracerConfig,
-        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
-        GethDebugTracingCallOptions, NameOrAddress, Transaction,
-    },
+    types::Transaction,
     utils::hex,
 };
 
-use crate::filters::Filters;
-
-fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, Bytes>) {
-    match &frame.to {
-        Some(a) => {
-            if let NameOrAddress::Address(addr) = a {
-                flattened.insert(*addr, frame.input.clone());
-            }
-        }
-        None => {} // Ignore contract creations
-    }
-    if let Some(child_calls) = &frame.calls {
-        for child in child_calls {
-            flatten(child, flattened);
-        }
-    }
-}
-
-async fn get_flattened_trace(
-    tx: Transaction,
-    provider: Provider<Ws>,
-) -> Option<HashMap<Address, Bytes>> {
-    let mut opts = GethDebugTracingCallOptions::default();
-    opts.tracing_options.tracer_config = Some(GethDebugTracerConfig::BuiltInTracer(
-        GethDebugBuiltInTracerConfig::CallTracer(CallConfig {
-            only_top_call: Some(false),
-            with_log: Some(false),
-        }),
-    ));
-    opts.tracing_options.timeout = Some("1s".to_string());
-    opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(
-        GethDebugBuiltInTracerType::CallTracer,
-    ));
-    let block_id = BlockId::Number(BlockNumber::Latest);
-    let traces = provider.debug_trace_call(&tx, Some(block_id), opts).await;
-    if let Ok(traces) = traces {
-        // Recursively flatten the CallFrame
-        // mapping of To -> Bytes
-        let mut flattened: HashMap<Address, Bytes> = HashMap::new();
-        if let Known(known_trace) = traces {
-            if let CallTracer(t) = known_trace {
-                flatten(&t, &mut flattened);
-                return Some(flattened);
-            }
-        }
-    }
-    None
-}
+use crate::filters::{Filters, add_optional_filter, add_range_filter};
 
 fn print_output(output_mode: OutputMode, txn: &Transaction) -> eyre::Result<()> {
     match output_mode {
@@ -97,8 +43,7 @@ async fn process_transaction(
         return Ok(());
     }
 
-    let touches = match args.touches {
-        Some(touches) => touches,
+    match args.touches {
         None => {
             print_output(args.output, &txn)?;
             if let Some(n) = args.n {
@@ -110,43 +55,38 @@ async fn process_transaction(
             }
             return Ok(());
         }
-    };
+        Some(touches) => {
+            if let Some(flattened) = trace::get_flattened_trace(txn.clone(), provider.clone()).await {
+                for (addr, input) in &flattened {
+                    if touches == *addr {
+                        let input_hex = hex::encode(input);
+                        let matched = args
+                            .touches_data
+                            .as_ref()
+                            .map_or(true, |data| data.as_str() == input_hex)
+                            && args.touches_sig.as_ref().map_or(true, |sig| {
+                                let sig = HumanReadableParser::parse_function(sig)
+                                    .unwrap()
+                                    .short_signature();
+                                input.starts_with(&sig)
+                            });
 
-    let flattened = match get_flattened_trace(txn.clone(), provider.clone()).await {
-        Some(flattened) => flattened,
-        None => {
-            // println!("No trace found for {:?}", txn.hash);
-            return Ok(());
-        }
-    };
-
-    for (addr, input) in &flattened {
-        if touches == *addr {
-            let input_hex = hex::encode(input);
-            let matched = args
-                .touches_data
-                .as_ref()
-                .map_or(true, |data| data.as_str() == input_hex)
-                && args.touches_sig.as_ref().map_or(true, |sig| {
-                    let sig = HumanReadableParser::parse_function(sig)
-                        .unwrap()
-                        .short_signature();
-                    input.starts_with(&sig)
-                });
-
-            if matched {
-                print_output(args.output, &txn)?;
-                if let Some(n) = args.n {
-                    *count += 1;
-                    if *count == n {
-                        std::process::exit(0);
+                        if matched {
+                            print_output(args.output, &txn)?;
+                            if let Some(n) = args.n {
+                                *count += 1;
+                                if *count == n {
+                                    std::process::exit(0);
+                                }
+                            }
+                            return Ok(());
+                        }
                     }
                 }
-                return Ok(());
             }
-        }
+            Ok(())
+        },
     }
-    Ok(())
 }
 
 #[tokio::main]
@@ -169,25 +109,19 @@ async fn main() -> eyre::Result<()> {
         }
         Tx(args) => {
             let mut filters = Filters::new();
-            if let Some(from) = args.from {
-                filters.add_filter(Box::new(filters::equality::FromFilter::new(from)));
-            }
-            if let Some(to) = args.to {
-                filters.add_filter(Box::new(filters::equality::ToFilter::new(to)));
-            }
-            if let Some(value) = args.value {
-                filters.add_filter(Box::new(filters::equality::ValueFilter::new(value)));
-            }
-            if let Some(nonce) = args.nonce {
-                filters.add_filter(Box::new(filters::equality::NonceFilter::new(nonce)));
-            }
-            if let Some(tip) = args.tip {
-                filters.add_filter(Box::new(filters::equality::TipFilter::new(tip)));
-            }
-            if let Some(gas_price) = args.gas_price {
-                filters.add_filter(Box::new(filters::equality::GasPriceFilter::new(gas_price)));
-                filters.add_filter(Box::new(filters::equality::MaxFeeFilter::new(gas_price)));
-            }
+            add_optional_filter(&mut filters, args.from, |v| Box::new(filters::equality::FromFilter::new(v)));
+            add_optional_filter(&mut filters, args.to, |v| Box::new(filters::equality::ToFilter::new(v)));
+            add_optional_filter(&mut filters, args.value, |v| Box::new(filters::equality::ValueFilter::new(v)));
+            add_optional_filter(&mut filters, args.nonce, |v| Box::new(filters::equality::NonceFilter::new(v)));
+            add_optional_filter(&mut filters, args.tip, |v| Box::new(filters::equality::TipFilter::new(v)));
+            add_optional_filter(&mut filters, args.gas_price, |v| Box::new(filters::equality::GasPriceFilter::new(v)));
+
+            add_range_filter(&mut filters, args.value_gt, args.value_lt, |gt, lt| Box::new(filters::range::ValueRangeFilter::new(gt, lt)));
+            add_range_filter(&mut filters, args.nonce_gt, args.nonce_lt, |gt, lt| Box::new(filters::range::NonceRangeFilter::new(gt, lt)));
+            add_range_filter(&mut filters, args.tip_gt, args.tip_lt, |gt, lt| Box::new(filters::range::TipRangeFilter::new(gt, lt)));
+            add_range_filter(&mut filters, args.gas_price_gt, args.gas_price_lt, |gt, lt| Box::new(filters::range::GasPriceRangeFilter::new(gt, lt)));
+
+
             if let Some(sig) = &args.sig {
                 let sig = HumanReadableParser::parse_function(sig)?.short_signature();
                 filters.add_filter(Box::new(filters::calldata::SigFilter::new(sig)));
@@ -200,35 +134,6 @@ async fn main() -> eyre::Result<()> {
                 filters.add_filter(Box::new(filters::calldata::RegexFilter::new(re)));
             }
 
-            if args.value_gt.is_some() || args.value_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::ValueRangeFilter::new(
-                    args.value_gt,
-                    args.value_lt,
-                )));
-            }
-            if args.nonce_gt.is_some() || args.nonce_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::NonceRangeFilter::new(
-                    args.nonce_gt,
-                    args.nonce_lt,
-                )));
-            }
-            if args.tip_gt.is_some() || args.tip_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::TipRangeFilter::new(
-                    args.tip_gt,
-                    args.tip_lt,
-                )));
-            }
-            if args.gas_price_gt.is_some() || args.gas_price_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::GasPriceRangeFilter::new(
-                    args.gas_price_gt,
-                    args.gas_price_lt,
-                )));
-                filters.add_filter(Box::new(filters::range::MaxFeeRangeFilter::new(
-                    args.gas_price_gt,
-                    args.gas_price_lt,
-                )));
-            }
-
             let provider = Provider::<Ws>::connect(args.rpc.rpc_url.clone())
                 .await
                 .unwrap();
@@ -238,50 +143,16 @@ async fn main() -> eyre::Result<()> {
                 loop {
                     let txn_hash = stream.next().await;
                     let txn = provider.get_transaction(txn_hash.unwrap()).await?;
-                    match txn {
-                        None => continue,
-                        Some(txn) => {
-                            match process_transaction(
-                                txn,
-                                &args,
-                                &mut filters,
-                                &provider,
-                                &mut count,
-                            )
-                            .await
-                            {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    eprintln!("Error processing transaction: {}", e);
-                                    break;
-                                }
-                            }
-                        }
+                    if let Some(txn) = txn {
+                        process_transaction( txn, &args, &mut filters, &provider, &mut count,).await?;
                     }
                 }
             } else {
                 let mut stream = provider.subscribe_full_pending_txs().await?;
                 loop {
                     let txn = stream.next().await;
-                    match txn {
-                        None => continue,
-                        Some(txn) => {
-                            match process_transaction(
-                                txn,
-                                &args,
-                                &mut filters,
-                                &provider,
-                                &mut count,
-                            )
-                            .await
-                            {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    eprintln!("Error processing transaction: {}", e);
-                                    break;
-                                }
-                            }
-                        }
+                    if let Some(txn) = txn {
+                        process_transaction( txn, &args, &mut filters, &provider, &mut count,).await?;
                     }
                 }
             }
