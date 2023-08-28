@@ -2,16 +2,24 @@ use std::str::FromStr;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use ethers::types::{U256, Address, U64};
+use ethers::types::{Address, U256, U64};
 
 use eyre::Result;
 
 /// parse a hex str or decimal str as U256
 fn parse_u64(s: &str) -> Result<U64> {
-    Ok(if s.starts_with("0x") { U64::from_str(s)? } else { U64::from_dec_str(s)? })
+    Ok(if s.starts_with("0x") {
+        U64::from_str(s)?
+    } else {
+        U64::from_dec_str(s)?
+    })
 }
 fn parse_u256(s: &str) -> Result<U256> {
-    Ok(if s.starts_with("0x") { U256::from_str(s)? } else { U256::from_dec_str(s)? })
+    Ok(if s.starts_with("0x") {
+        U256::from_str(s)?
+    } else {
+        U256::from_dec_str(s)?
+    })
 }
 fn parse_gwei(s: &str) -> Result<U256> {
     // string to float
@@ -38,7 +46,7 @@ pub struct App {
 pub enum OutputMode {
     Rlp,
     Hash,
-    Json
+    Json,
 }
 
 #[derive(Debug, Args)]

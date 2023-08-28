@@ -1,14 +1,26 @@
 mod cmd;
 mod filters;
 
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
-use clap::{Parser};
-use cmd::watch::{App, Command::{WithBlock, Tx}, OutputMode};
-use ethers::{providers::{Provider, Ws, Middleware, StreamExt}, types::{Transaction, BlockId, BlockNumber, GethDebugTracingCallOptions, GethDebugBuiltInTracerType, GethDebugTracerType, CallConfig, GethDebugTracerConfig, GethDebugBuiltInTracerConfig, Address, Bytes, NameOrAddress}, utils::hex};
+use clap::Parser;
+use cmd::watch::{
+    App,
+    Command::{Tx, WithBlock},
+    OutputMode,
+};
 use ethers::abi::HumanReadableParser;
-use ethers::types::GethTrace::{Known};
+use ethers::types::GethTrace::Known;
 use ethers::types::GethTraceFrame::CallTracer;
+use ethers::{
+    providers::{Middleware, Provider, StreamExt, Ws},
+    types::{
+        Address, BlockId, BlockNumber, Bytes, CallConfig, GethDebugBuiltInTracerConfig,
+        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
+        GethDebugTracingCallOptions, NameOrAddress, Transaction,
+    },
+    utils::hex,
+};
 
 use crate::filters::Filters;
 
@@ -18,8 +30,8 @@ fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, By
             if let NameOrAddress::Address(addr) = a {
                 flattened.insert(*addr, frame.input.clone());
             }
-        },
-        None => {}, // Ignore contract creations
+        }
+        None => {} // Ignore contract creations
     }
     if let Some(child_calls) = &frame.calls {
         for child in child_calls {
@@ -28,14 +40,21 @@ fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, By
     }
 }
 
-async fn get_flattened_trace(tx: Transaction, provider: Provider<Ws>) -> Option<HashMap<Address, Bytes>> {
+async fn get_flattened_trace(
+    tx: Transaction,
+    provider: Provider<Ws>,
+) -> Option<HashMap<Address, Bytes>> {
     let mut opts = GethDebugTracingCallOptions::default();
-    opts.tracing_options.tracer_config =
-        Some(GethDebugTracerConfig::BuiltInTracer(GethDebugBuiltInTracerConfig::CallTracer(
-            CallConfig { only_top_call: Some(false), with_log: Some(false) },
-        )));
+    opts.tracing_options.tracer_config = Some(GethDebugTracerConfig::BuiltInTracer(
+        GethDebugBuiltInTracerConfig::CallTracer(CallConfig {
+            only_top_call: Some(false),
+            with_log: Some(false),
+        }),
+    ));
     opts.tracing_options.timeout = Some("1s".to_string());
-    opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(GethDebugBuiltInTracerType::CallTracer));
+    opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(
+        GethDebugBuiltInTracerType::CallTracer,
+    ));
     let block_id = BlockId::Number(BlockNumber::Latest);
     let traces = provider.debug_trace_call(&tx, Some(block_id), opts).await;
     if let Ok(traces) = traces {
@@ -45,7 +64,7 @@ async fn get_flattened_trace(tx: Transaction, provider: Provider<Ws>) -> Option<
         if let Known(known_trace) = traces {
             if let CallTracer(t) = known_trace {
                 flatten(&t, &mut flattened);
-                return Some(flattened)
+                return Some(flattened);
             }
         }
     }
@@ -56,22 +75,28 @@ fn print_output(output_mode: OutputMode, txn: &Transaction) -> eyre::Result<()> 
     match output_mode {
         OutputMode::Rlp => {
             println!("{}", hex::encode(txn.rlp()));
-        },
+        }
         OutputMode::Hash => {
             println!("{:?}", txn.hash);
-        },
+        }
         OutputMode::Json => {
             println!("{}", serde_json::to_string(&txn)?);
-        },
+        }
     }
     Ok(())
 }
 
-async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filters: &mut Filters, provider: &Provider<Ws>, count: &mut u64) -> eyre::Result<()> {
+async fn process_transaction(
+    txn: Transaction,
+    args: &cmd::watch::TxArgs,
+    filters: &mut Filters,
+    provider: &Provider<Ws>,
+    count: &mut u64,
+) -> eyre::Result<()> {
     if !filters.apply(&txn) {
         return Ok(());
     }
-    
+
     let touches = match args.touches {
         Some(touches) => touches,
         None => {
@@ -84,7 +109,7 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
                 }
             }
             return Ok(());
-        },
+        }
     };
 
     let flattened = match get_flattened_trace(txn.clone(), provider.clone()).await {
@@ -92,15 +117,20 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
         None => {
             // println!("No trace found for {:?}", txn.hash);
             return Ok(());
-        },
+        }
     };
 
     for (addr, input) in &flattened {
         if touches == *addr {
             let input_hex = hex::encode(input);
-            let matched = args.touches_data.as_ref().map_or(true, |data| data.as_str() == input_hex)
+            let matched = args
+                .touches_data
+                .as_ref()
+                .map_or(true, |data| data.as_str() == input_hex)
                 && args.touches_sig.as_ref().map_or(true, |sig| {
-                    let sig = HumanReadableParser::parse_function(sig).unwrap().short_signature();
+                    let sig = HumanReadableParser::parse_function(sig)
+                        .unwrap()
+                        .short_signature();
                     input.starts_with(&sig)
                 });
 
@@ -119,8 +149,6 @@ async fn process_transaction(txn: Transaction, args: &cmd::watch::TxArgs, filter
     Ok(())
 }
 
-
-
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // Read .env file
@@ -133,10 +161,10 @@ async fn main() -> eyre::Result<()> {
             //let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
             //let block = provider.get_block(ethers::types::BlockNumber::Latest).await?;
             //match block {
-                //None => println!("No block found"),
-                //Some(block) => {
-                    //filter.apply()
-                //},
+            //None => println!("No block found"),
+            //Some(block) => {
+            //filter.apply()
+            //},
             //}
         }
         Tx(args) => {
@@ -173,20 +201,37 @@ async fn main() -> eyre::Result<()> {
             }
 
             if args.value_gt.is_some() || args.value_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::ValueRangeFilter::new(args.value_gt, args.value_lt)));
+                filters.add_filter(Box::new(filters::range::ValueRangeFilter::new(
+                    args.value_gt,
+                    args.value_lt,
+                )));
             }
             if args.nonce_gt.is_some() || args.nonce_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::NonceRangeFilter::new(args.nonce_gt, args.nonce_lt)));
+                filters.add_filter(Box::new(filters::range::NonceRangeFilter::new(
+                    args.nonce_gt,
+                    args.nonce_lt,
+                )));
             }
             if args.tip_gt.is_some() || args.tip_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::TipRangeFilter::new(args.tip_gt, args.tip_lt)));
+                filters.add_filter(Box::new(filters::range::TipRangeFilter::new(
+                    args.tip_gt,
+                    args.tip_lt,
+                )));
             }
             if args.gas_price_gt.is_some() || args.gas_price_lt.is_some() {
-                filters.add_filter(Box::new(filters::range::GasPriceRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
-                filters.add_filter(Box::new(filters::range::MaxFeeRangeFilter::new(args.gas_price_gt, args.gas_price_lt)));
+                filters.add_filter(Box::new(filters::range::GasPriceRangeFilter::new(
+                    args.gas_price_gt,
+                    args.gas_price_lt,
+                )));
+                filters.add_filter(Box::new(filters::range::MaxFeeRangeFilter::new(
+                    args.gas_price_gt,
+                    args.gas_price_lt,
+                )));
             }
 
-            let provider = Provider::<Ws>::connect(args.rpc.rpc_url.clone()).await.unwrap();
+            let provider = Provider::<Ws>::connect(args.rpc.rpc_url.clone())
+                .await
+                .unwrap();
             let mut count: u64 = 0;
             if args.rpc.legacy {
                 let mut stream = provider.subscribe_pending_txs().await?;
@@ -196,17 +241,24 @@ async fn main() -> eyre::Result<()> {
                     match txn {
                         None => continue,
                         Some(txn) => {
-                            match process_transaction(txn, &args, &mut filters, &provider, &mut count).await {
-                                Ok(_) => {},
+                            match process_transaction(
+                                txn,
+                                &args,
+                                &mut filters,
+                                &provider,
+                                &mut count,
+                            )
+                            .await
+                            {
+                                Ok(_) => {}
                                 Err(e) => {
                                     eprintln!("Error processing transaction: {}", e);
                                     break;
-                                },
+                                }
                             }
-                        },
+                        }
                     }
                 }
-
             } else {
                 let mut stream = provider.subscribe_full_pending_txs().await?;
                 loop {
@@ -214,14 +266,22 @@ async fn main() -> eyre::Result<()> {
                     match txn {
                         None => continue,
                         Some(txn) => {
-                            match process_transaction(txn, &args, &mut filters, &provider, &mut count).await {
-                                Ok(_) => {},
+                            match process_transaction(
+                                txn,
+                                &args,
+                                &mut filters,
+                                &provider,
+                                &mut count,
+                            )
+                            .await
+                            {
+                                Ok(_) => {}
                                 Err(e) => {
                                     eprintln!("Error processing transaction: {}", e);
                                     break;
-                                },
+                                }
                             }
-                        },
+                        }
                     }
                 }
             }

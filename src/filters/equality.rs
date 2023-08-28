@@ -1,5 +1,5 @@
-use ethers::types::{Address, U256, Transaction};
-use super::{Filter};
+use super::Filter;
+use ethers::types::{Address, Transaction, U256};
 
 macro_rules! equality_filter {
     // For fields of type `Option<T>`.

@@ -5,16 +5,16 @@ use ethers::{types::Transaction, utils::hex};
 use super::Filter;
 
 pub struct SigFilter {
-    value: [u8;4],
+    value: [u8; 4],
 }
-impl SigFilter{
-    pub fn new(value: [u8;4]) -> Self {
+impl SigFilter {
+    pub fn new(value: [u8; 4]) -> Self {
         // convert value to bytes
         Self { value }
     }
 }
 
-impl Filter for SigFilter{
+impl Filter for SigFilter {
     fn apply(&self, o: &Transaction) -> bool {
         o.input.starts_with(&self.value)
     }
@@ -23,7 +23,7 @@ impl Filter for SigFilter{
 pub struct DataFilter {
     value: Vec<u8>,
 }
-impl DataFilter{
+impl DataFilter {
     pub fn new(value: Vec<u8>) -> Self {
         // convert value to bytes
         Self { value }
@@ -37,11 +37,13 @@ impl Filter for DataFilter {
 }
 
 pub struct RegexFilter {
-    re: Regex
+    re: Regex,
 }
 impl RegexFilter {
     pub fn new(s: &String) -> Self {
-        Self { re: Regex::new(s).unwrap() }
+        Self {
+            re: Regex::new(s).unwrap(),
+        }
     }
 }
 impl Filter for RegexFilter {

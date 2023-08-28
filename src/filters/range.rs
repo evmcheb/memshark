@@ -1,6 +1,6 @@
-use ethers::types::U256;
 use crate::filters::Filter;
 use ethers::types::Transaction;
+use ethers::types::U256;
 
 macro_rules! range_filter {
     // For fields of type `Option<T>`.

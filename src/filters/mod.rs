@@ -2,7 +2,7 @@ pub mod equality;
 #[macro_use]
 pub mod range;
 pub mod calldata;
-use ethers::types::{Transaction};
+use ethers::types::Transaction;
 
 pub trait Filter {
     fn apply(&self, tx: &Transaction) -> bool;
@@ -14,7 +14,9 @@ pub struct Filters {
 
 impl Filters {
     pub fn new() -> Self {
-        Filters { filters: Vec::new() }
+        Filters {
+            filters: Vec::new(),
+        }
     }
 
     pub fn add_filter(&mut self, filter: Box<dyn Filter>) {
@@ -25,4 +27,3 @@ impl Filters {
         self.filters.iter().all(|filter| filter.apply(tx))
     }
 }
-
