@@ -42,18 +42,21 @@ async fn process_transaction(
     if !filters.apply(&txn) {
         return Ok(());
     }
+    let output_and_exit = |count: &mut u64, args: &cmd::watch::TxArgs, txn: &Transaction| -> eyre::Result<()> {
+        print_output(args.output, txn)?;
+        if let Some(n) = args.n {
+            *count += 1;
+            if *count == n {
+                // exit silently
+                std::process::exit(0);
+            }
+        }
+        Ok(())
+    };
 
     match args.touches {
         None => {
-            print_output(args.output, &txn)?;
-            if let Some(n) = args.n {
-                *count += 1;
-                if *count == n {
-                    // exit silently
-                    std::process::exit(0);
-                }
-            }
-            return Ok(());
+            output_and_exit(count, args, &txn)?
         }
         Some(touches) => {
             if let Some(flattened) = trace::get_flattened_trace(txn.clone(), provider.clone()).await {
@@ -72,21 +75,14 @@ async fn process_transaction(
                             });
 
                         if matched {
-                            print_output(args.output, &txn)?;
-                            if let Some(n) = args.n {
-                                *count += 1;
-                                if *count == n {
-                                    std::process::exit(0);
-                                }
-                            }
-                            return Ok(());
+                            output_and_exit(count, args, &txn)?;
                         }
                     }
                 }
             }
-            Ok(())
         },
     }
+    Ok(())
 }
 
 #[tokio::main]
