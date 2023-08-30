@@ -1,6 +1,6 @@
-# shark-rs
+# memshark-rs
 
-`shark-rs` is a highly performant Ethereum Virtual Machine (EVM) mempool filtering tool written in Rust. It enables precise monitoring and analysis of transactions based on various filters.
+`memshark-rs` is a highly performant Ethereum Virtual Machine (EVM) mempool filtering tool written in Rust. It enables precise monitoring and analysis of transactions based on various filters.
 
 ## Features
 
@@ -33,9 +33,7 @@ cargo install --path .
 
 ### Run
 
-Configure your filters and execute the application:
-
-bash
+The CLI tool is called `shark`:
 
 ```bash
 shark tx/block [filters]
@@ -72,11 +70,8 @@ Support and Issues
 
 https://twitter.com/evmcheb
 
-Acknowledgments
----------------
-
 Special thanks to the Ethers-rs library and the Rust community for their support.
 
 ---
 
-Happy filtering with `shark-rs`!
+Happy filtering!
