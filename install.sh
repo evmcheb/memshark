@@ -30,7 +30,13 @@ case $OS in
 esac
 
 # Download and extract binary
-URL="https://github.com/evmcheb/shark/releases/download/latest/shark-${ARCH}-${OS}.tar.gz"
+
+# Fetch the latest release tag
+LATEST_TAG=$(curl -s "https://api.github.com/repos/evmcheb/shark/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+# Form the complete URL
+URL="https://github.com/evmcheb/shark/releases/download/${LATEST_TAG}/shark-${ARCH}-${OS}.tar.gz"
+echo "Downloading from: $URL"
 mkdir -p "$SHARK_DIR"
 curl -L "$URL" | tar xz -C "$SHARK_DIR"
 
