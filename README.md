@@ -9,6 +9,21 @@
 - Supports several types of filters (regex, range, exact).
 - Supports filtering by sub-calls using `debug_traceCall`
 
+## Install
+
+curl one-liner:
+
+```
+curl -fsSL https://github.com/evmcheb/shark/raw/master/install.sh | bash
+```
+
+wget one-liner:
+
+```
+wget -O - https://github.com/evmcheb/shark/raw/master/install.sh | bash
+``````
+
+
 ## Dependencies
 
 Make sure you have the following dependencies installed:

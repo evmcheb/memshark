@@ -20,6 +20,7 @@ OS=$(uname -s)
 case $ARCH in
   x86_64) ARCH="x86_64" ;;
   aarch64) ARCH="aarch64" ;;
+  arm64) ARCH="aarch64" ;;
   *) echo "Unsupported architecture"; exit 1 ;;
 esac
 case $OS in
