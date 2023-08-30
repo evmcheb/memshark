@@ -9,7 +9,7 @@
 - Supports several types of filters (regex, range, exact).
 - Supports filtering by sub-calls using `debug_traceCall`
 
-## Install
+## Install from bins (Linux and macOS)
 
 curl one-liner:
 
@@ -23,20 +23,12 @@ wget one-liner:
 wget -O - https://github.com/evmcheb/shark/raw/master/install.sh | bash
 ``````
 
+## Install from source
 
-## Dependencies
-
-Make sure you have the following dependencies installed:
-
-- Rust compiler
-- WebSockets for Ethereum provider interaction
-
-## Usage
-
-### Build
-
-```bash
-cargo build --release
+```
+git clone https://github.com/evmcheb/shark
+cd shark
+cargo install --path .
 ```
 
 ### Run
@@ -46,7 +38,7 @@ Configure your filters and execute the application:
 bash
 
 ```bash
-cargo run -- [OPTIONS]
+shark tx/block [filters]
 ```
 
 ### Filters
@@ -69,10 +61,6 @@ shark tx --n 1 --touches 0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640 --touches-si
 ```
 - Find the next transaction that is sent to/makes a call to `0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640` with `swap` signature.
 
-License
--------
-
-Please refer to the attached license file for information on code reuse and distribution.
 
 Contributing
 ------------
@@ -82,7 +70,7 @@ Contributions are welcome! Please refer to the contribution guidelines for detai
 Support and Issues
 ------------------
 
-For support or to report issues, please open an issue on the project's GitHub page.
+https://twitter.com/evmcheb
 
 Acknowledgments
 ---------------
