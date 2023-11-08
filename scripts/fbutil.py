@@ -30,7 +30,8 @@ RELAYS = [
     "https://rpc.lightspeedbuilder.info",
     "https://rpc.nfactorial.xyz",
     "https://boba-builder.com/searcher",
-    "https://rpc.f1b.io"
+    "https://rpc.f1b.io",
+    "https://rpc.lokibuilder.xyz"
 ]
 
 
