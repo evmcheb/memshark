@@ -64,7 +64,7 @@ pub struct TxArgs {
     pub n: Option<u64>,
 
     #[clap(long)]
-    pub with_missed: bool,
+    pub confirmed: bool,
 
     #[clap(long, short)]
     pub to: Option<Address>,

@@ -14,6 +14,8 @@ use ethers::{
     types::Transaction,
     utils::hex,
 };
+use futures::stream::select;
+
 
 use crate::filters::{add_optional_filter, add_range_filter, Filters};
 use anyhow::Result;
@@ -172,12 +174,29 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             } else {
-                let mut stream = provider.subscribe_full_pending_txs().await?;
+                let mut stream = provider.subscribe_full_pending_txs().await?.map(|tx| tx).boxed();
+                let mut blockstream = provider.subscribe_blocks().await?;
+                let mut seen_txns = std::collections::HashSet::new();
                 loop {
-                    let txn = stream.next().await;
-                    if let Some(txn) = txn {
-                        process_transaction(txn, &args, &mut filters, &provider, &mut count)
-                            .await?;
+                    tokio::select! {
+                        Some(txn) = stream.next() => {
+                            seen_txns.insert(txn.hash);
+                            process_transaction(txn, &args, &mut filters, &provider, &mut count).await?;
+                        }
+                        Some(block) = blockstream.next() => {
+                            if args.confirmed {
+                                let block = provider.get_block_with_txs(block.number.unwrap()).await?;
+                                if let Some(block) = block {
+                                    for txn in block.transactions {
+                                        if !seen_txns.contains(&txn.hash) {
+                                            process_transaction(txn, &args, &mut filters, &provider, &mut count)
+                                                .await?;
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                     }
                 }
             }

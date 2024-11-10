@@ -12,6 +12,7 @@ ethers = { version = "2.0", features = ["ws", "rustls"] }
 tokio = { version = "1.28.2", features = ["full"] }
 # Flexible concrete Error Reporting type built on std::error::Error with customizable Reports
 eyre = "0.6"
+futures = "0.3.31"
 
 # Serde for 
 serde = "1.0.163"

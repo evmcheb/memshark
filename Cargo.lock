@@ -2988,6 +2988,7 @@ dependencies = [
  "env_logger",
  "ethers",
  "eyre",
+ "futures",
  "log",
  "regex",
  "serde",
