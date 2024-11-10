@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 dotenv = "0.15.0"
-ethers = { version = "2.0", features = ["rustls", "ws"] }
+ethers = { version = "2.0", features = ["ws", "rustls"] }
 # Ethers' async features rely upon the Tokio async runtime.
 tokio = { version = "1.28.2", features = ["full"] }
 # Flexible concrete Error Reporting type built on std::error::Error with customizable Reports
@@ -25,3 +25,5 @@ env_logger = "0.9.0"
 clap = { version = "4.3.0", features = ["derive", "env", "unicode", "wrap_help"] }
 clap_complete = "4.3.0"
 clap_complete_fig = "4.3.0"
+
+anyhow = "1.0"

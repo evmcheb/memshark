@@ -8,16 +8,17 @@ use cmd::watch::{
     Command::{Tx, WithBlock},
     OutputMode,
 };
-use ethers::abi::HumanReadableParser;
 use ethers::{
+    abi::HumanReadableParser,
     providers::{Middleware, Provider, StreamExt, Ws},
     types::Transaction,
     utils::hex,
 };
 
-use crate::filters::{Filters, add_optional_filter, add_range_filter};
+use crate::filters::{add_optional_filter, add_range_filter, Filters};
+use anyhow::Result;
 
-fn print_output(output_mode: OutputMode, txn: &Transaction) -> eyre::Result<()> {
+fn print_output(output_mode: OutputMode, txn: &Transaction) -> Result<()> {
     match output_mode {
         OutputMode::Rlp => {
             println!("{}", hex::encode(txn.rlp()));
@@ -38,55 +39,59 @@ async fn process_transaction(
     filters: &mut Filters,
     provider: &Provider<Ws>,
     count: &mut u64,
-) -> eyre::Result<()> {
+) -> Result<()> {
     if !filters.apply(&txn) {
         return Ok(());
     }
-    let output_and_exit = |count: &mut u64, args: &cmd::watch::TxArgs, txn: &Transaction| -> eyre::Result<()> {
-        print_output(args.output, txn)?;
-        if let Some(n) = args.n {
-            *count += 1;
-            if *count == n {
-                // exit silently
-                std::process::exit(0);
+    let output_and_exit =
+        |count: &mut u64, args: &cmd::watch::TxArgs, txn: &Transaction| -> Result<()> {
+            print_output(args.output, txn)?;
+            if let Some(n) = args.n {
+                *count += 1;
+                if *count >= n {
+                    // Exit silently
+                    std::process::exit(0);
+                }
             }
-        }
-        Ok(())
-    };
+            Ok(())
+        };
 
-    match args.touches {
-        None => {
-            output_and_exit(count, args, &txn)?
-        }
+    match args.trace_addr {
+        None => output_and_exit(count, args, &txn)?,
         Some(touches) => {
-            if let Some(flattened) = trace::get_flattened_trace(txn.clone(), provider.clone()).await {
+            if let Some(flattened) = trace::get_flattened_trace(txn.clone(), provider.clone()).await
+            {
                 for (addr, input) in &flattened {
                     if touches == *addr {
                         let input_hex = hex::encode(input);
-                        let matched = args
-                            .touches_data
-                            .as_ref()
-                            .map_or(true, |data| data.as_str() == input_hex)
-                            && args.touches_sig.as_ref().map_or(true, |sig| {
-                                let sig = HumanReadableParser::parse_function(sig)
-                                    .unwrap()
-                                    .short_signature();
-                                input.starts_with(&sig)
-                            });
+                        let matches_data = match args.trace_data.as_deref() {
+                            None => true,
+                            Some(data) => data == &input_hex,
+                        };
 
-                        if matched {
+                        let matches_sig = match &args.trace_sig {
+                            None => true,
+                            Some(sig) => {
+                                let parsed_sig = HumanReadableParser::parse_function(sig)
+                                    .expect("Invalid function signature")
+                                    .short_signature();
+                                input.starts_with(&parsed_sig)
+                            }
+                        };
+
+                        if matches_data && matches_sig {
                             output_and_exit(count, args, &txn)?;
                         }
                     }
                 }
             }
-        },
+        }
     }
     Ok(())
 }
 
 #[tokio::main]
-async fn main() -> eyre::Result<()> {
+async fn main() -> anyhow::Result<()> {
     // Read .env file
     dotenv::dotenv().ok();
     let args = App::parse();
@@ -105,18 +110,40 @@ async fn main() -> eyre::Result<()> {
         }
         Tx(args) => {
             let mut filters = Filters::new();
-            add_optional_filter(&mut filters, args.from, |v| Box::new(filters::equality::FromFilter::new(v)));
-            add_optional_filter(&mut filters, args.to, |v| Box::new(filters::equality::ToFilter::new(v)));
-            add_optional_filter(&mut filters, args.value, |v| Box::new(filters::equality::ValueFilter::new(v)));
-            add_optional_filter(&mut filters, args.nonce, |v| Box::new(filters::equality::NonceFilter::new(v)));
-            add_optional_filter(&mut filters, args.tip, |v| Box::new(filters::equality::TipFilter::new(v)));
-            add_optional_filter(&mut filters, args.gas_price, |v| Box::new(filters::equality::GasPriceFilter::new(v)));
+            add_optional_filter(&mut filters, args.from, |v| {
+                Box::new(filters::equality::FromFilter::new(v))
+            });
+            add_optional_filter(&mut filters, args.to, |v| {
+                Box::new(filters::equality::ToFilter::new(v))
+            });
+            add_optional_filter(&mut filters, args.value, |v| {
+                Box::new(filters::equality::ValueFilter::new(v))
+            });
+            add_optional_filter(&mut filters, args.nonce, |v| {
+                Box::new(filters::equality::NonceFilter::new(v))
+            });
+            add_optional_filter(&mut filters, args.tip, |v| {
+                Box::new(filters::equality::TipFilter::new(v))
+            });
+            add_optional_filter(&mut filters, args.gas_price, |v| {
+                Box::new(filters::equality::GasPriceFilter::new(v))
+            });
 
-            add_range_filter(&mut filters, args.value_gt, args.value_lt, |gt, lt| Box::new(filters::range::ValueRangeFilter::new(gt, lt)));
-            add_range_filter(&mut filters, args.nonce_gt, args.nonce_lt, |gt, lt| Box::new(filters::range::NonceRangeFilter::new(gt, lt)));
-            add_range_filter(&mut filters, args.tip_gt, args.tip_lt, |gt, lt| Box::new(filters::range::TipRangeFilter::new(gt, lt)));
-            add_range_filter(&mut filters, args.gas_price_gt, args.gas_price_lt, |gt, lt| Box::new(filters::range::GasPriceRangeFilter::new(gt, lt)));
-
+            add_range_filter(&mut filters, args.value_gt, args.value_lt, |gt, lt| {
+                Box::new(filters::range::ValueRangeFilter::new(gt, lt))
+            });
+            add_range_filter(&mut filters, args.nonce_gt, args.nonce_lt, |gt, lt| {
+                Box::new(filters::range::NonceRangeFilter::new(gt, lt))
+            });
+            add_range_filter(&mut filters, args.tip_gt, args.tip_lt, |gt, lt| {
+                Box::new(filters::range::TipRangeFilter::new(gt, lt))
+            });
+            add_range_filter(
+                &mut filters,
+                args.gas_price_gt,
+                args.gas_price_lt,
+                |gt, lt| Box::new(filters::range::GasPriceRangeFilter::new(gt, lt)),
+            );
 
             if let Some(sig) = &args.sig {
                 let sig = HumanReadableParser::parse_function(sig)?.short_signature();
@@ -140,7 +167,8 @@ async fn main() -> eyre::Result<()> {
                     let txn_hash = stream.next().await;
                     let txn = provider.get_transaction(txn_hash.unwrap()).await?;
                     if let Some(txn) = txn {
-                        process_transaction( txn, &args, &mut filters, &provider, &mut count,).await?;
+                        process_transaction(txn, &args, &mut filters, &provider, &mut count)
+                            .await?;
                     }
                 }
             } else {
@@ -148,7 +176,8 @@ async fn main() -> eyre::Result<()> {
                 loop {
                     let txn = stream.next().await;
                     if let Some(txn) = txn {
-                        process_transaction( txn, &args, &mut filters, &provider, &mut count,).await?;
+                        process_transaction(txn, &args, &mut filters, &provider, &mut count)
+                            .await?;
                     }
                 }
             }

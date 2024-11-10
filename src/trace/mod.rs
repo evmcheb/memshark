@@ -1,8 +1,15 @@
 use std::collections::HashMap;
 
-use ethers::{types::{Address, Bytes, NameOrAddress, Transaction, GethDebugTracingCallOptions, GethDebugBuiltInTracerConfig, GethDebugTracerConfig, CallConfig, GethDebugTracerType, GethDebugBuiltInTracerType, BlockId, BlockNumber}, providers::{Provider, Ws, Middleware}};
 use ethers::types::GethTrace::Known;
 use ethers::types::GethTraceFrame::CallTracer;
+use ethers::{
+    providers::{Middleware, Provider, Ws},
+    types::{
+        Address, BlockId, BlockNumber, Bytes, CallConfig, GethDebugBuiltInTracerConfig,
+        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
+        GethDebugTracingCallOptions, NameOrAddress, Transaction,
+    },
+};
 
 fn flatten(frame: &ethers::types::CallFrame, flattened: &mut HashMap<Address, Bytes>) {
     match &frame.to {

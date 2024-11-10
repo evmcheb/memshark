@@ -107,11 +107,11 @@ pub struct TxArgs {
     pub gas_price_lt: Option<U256>,
 
     #[clap(long)]
-    pub touches: Option<Address>,
-    #[clap(long, value_parser=strip_0x_prefix, conflicts_with_all=&["touches_data"])]
-    pub touches_sig: Option<String>,
+    pub trace_addr: Option<Address>,
+    #[clap(long, value_parser=strip_0x_prefix, conflicts_with_all=&["trace_data"])]
+    pub trace_sig: Option<String>,
     #[clap(long, value_parser=strip_0x_prefix)]
-    pub touches_data: Option<String>,
+    pub trace_data: Option<String>,
 
     #[clap(flatten)]
     pub rpc: RpcOpts,
