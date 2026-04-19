@@ -2,205 +2,249 @@ mod cmd;
 mod filters;
 mod trace;
 
+use std::collections::{HashSet, VecDeque};
+use std::time::Duration;
+
 use clap::Parser;
-use cmd::watch::{
-    App,
-    Command::{Tx, WithBlock},
-    OutputMode,
-};
+use cmd::watch::{App, Command, OutputMode, TxArgs};
 use ethers::{
     abi::HumanReadableParser,
-    providers::{Middleware, Provider, StreamExt, Ws},
-    types::Transaction,
+    providers::{Middleware, Provider, ProviderError, Ws},
+    types::{Transaction, H256},
     utils::hex,
 };
-use futures::stream::select;
+use eyre::Result;
+use futures::stream::{BoxStream, StreamExt};
+use regex::Regex;
 
+use crate::filters::{range, Filters};
 
-use crate::filters::{add_optional_filter, add_range_filter, Filters};
-use anyhow::Result;
+const FETCH_CONCURRENCY: usize = 256;
+const FETCH_RETRIES: usize = 4;
+const SEEN_CAPACITY: usize = 16_384;
 
-fn print_output(output_mode: OutputMode, txn: &Transaction) -> Result<()> {
-    match output_mode {
-        OutputMode::Rlp => {
-            println!("{}", hex::encode(txn.rlp()));
-        }
-        OutputMode::Hash => {
-            println!("{:?}", txn.hash);
-        }
-        OutputMode::Json => {
-            println!("{}", serde_json::to_string(&txn)?);
-        }
+fn print_output(mode: OutputMode, tx: &Transaction) -> Result<()> {
+    match mode {
+        OutputMode::Rlp => println!("{}", hex::encode(tx.rlp())),
+        OutputMode::Hash => println!("{:?}", tx.hash),
+        OutputMode::Json => println!("{}", serde_json::to_string(tx)?),
     }
     Ok(())
 }
 
-async fn process_transaction(
-    txn: Transaction,
-    args: &cmd::watch::TxArgs,
-    filters: &mut Filters,
-    provider: &Provider<Ws>,
-    count: &mut u64,
-) -> Result<()> {
-    if !filters.apply(&txn) {
-        return Ok(());
+fn build_filters(args: &TxArgs) -> Result<Filters> {
+    let mut f = Filters::default();
+
+    if let Some(v) = args.from {
+        f.push(move |tx| tx.from == v);
     }
-    let output_and_exit =
-        |count: &mut u64, args: &cmd::watch::TxArgs, txn: &Transaction| -> Result<()> {
-            print_output(args.output, txn)?;
-            if let Some(n) = args.n {
-                *count += 1;
-                if *count >= n {
-                    // Exit silently
-                    std::process::exit(0);
-                }
-            }
-            Ok(())
-        };
+    if let Some(v) = args.to {
+        f.push(move |tx| tx.to.map_or(v.is_zero(), |a| a == v));
+    }
+    if let Some(v) = args.value {
+        f.push(move |tx| tx.value == v);
+    }
+    if let Some(v) = args.nonce {
+        f.push(move |tx| tx.nonce == v);
+    }
+    if let Some(v) = args.tip {
+        f.push(move |tx| tx.max_priority_fee_per_gas == Some(v));
+    }
+    if let Some(v) = args.gas_price {
+        f.push(move |tx| tx.gas_price == Some(v));
+    }
 
-    match args.trace_addr {
-        None => output_and_exit(count, args, &txn)?,
-        Some(touches) => {
-            if let Some(flattened) = trace::get_flattened_trace(txn.clone(), provider.clone()).await
-            {
-                for (addr, input) in &flattened {
-                    if touches == *addr {
-                        let input_hex = hex::encode(input);
-                        let matches_data = match args.trace_data.as_deref() {
-                            None => true,
-                            Some(data) => data == &input_hex,
-                        };
+    range(&mut f, args.value_gt, args.value_lt, |tx| Some(tx.value));
+    range(&mut f, args.nonce_gt, args.nonce_lt, |tx| Some(tx.nonce));
+    range(&mut f, args.tip_gt, args.tip_lt, |tx| {
+        tx.max_priority_fee_per_gas
+    });
+    range(&mut f, args.gas_price_gt, args.gas_price_lt, |tx| tx.gas_price);
 
-                        let matches_sig = match &args.trace_sig {
-                            None => true,
-                            Some(sig) => {
-                                let parsed_sig = HumanReadableParser::parse_function(sig)
-                                    .expect("Invalid function signature")
-                                    .short_signature();
-                                input.starts_with(&parsed_sig)
-                            }
-                        };
+    if let Some(sig) = &args.sig {
+        let sel = HumanReadableParser::parse_function(sig)?.short_signature();
+        f.push(move |tx| tx.input.starts_with(&sel));
+    }
+    if let Some(sel) = args.selector {
+        f.push(move |tx| tx.input.starts_with(&sel));
+    }
+    if let Some(data) = &args.data {
+        let bytes = hex::decode(data)?;
+        f.push(move |tx| tx.input.as_ref() == bytes.as_slice());
+    }
+    if let Some(pattern) = &args.data_re {
+        let re = Regex::new(pattern)?;
+        f.push(move |tx| re.is_match(&hex::encode(&tx.input)));
+    }
+    Ok(f)
+}
 
-                        if matches_data && matches_sig {
-                            output_and_exit(count, args, &txn)?;
-                        }
-                    }
+async fn retry_get_tx(
+    provider: &Provider<Ws>,
+    hash: H256,
+) -> Result<Option<Transaction>, ProviderError> {
+    let mut r = provider.get_transaction(hash).await;
+    for _ in 0..FETCH_RETRIES {
+        if r.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        r = provider.get_transaction(hash).await;
+    }
+    r
+}
+
+struct Seen {
+    set: HashSet<H256>,
+    order: VecDeque<H256>,
+    cap: usize,
+}
+
+impl Seen {
+    fn new(cap: usize) -> Self {
+        Self {
+            set: HashSet::with_capacity(cap),
+            order: VecDeque::with_capacity(cap),
+            cap,
+        }
+    }
+
+    fn insert(&mut self, h: H256) {
+        if self.set.insert(h) {
+            self.order.push_back(h);
+            if self.set.len() > self.cap {
+                if let Some(old) = self.order.pop_front() {
+                    self.set.remove(&old);
                 }
             }
         }
     }
-    Ok(())
+
+    fn contains(&self, h: &H256) -> bool {
+        self.set.contains(h)
+    }
+}
+
+struct Runtime {
+    args: TxArgs,
+    filters: Filters,
+    trace_sig: Option<[u8; 4]>,
+    provider: Provider<Ws>,
+    count: u64,
+}
+
+impl Runtime {
+    async fn process(&mut self, tx: &Transaction) -> Result<bool> {
+        if !self.filters.apply(tx) {
+            return Ok(false);
+        }
+
+        if let Some(touches) = self.args.trace_addr {
+            let Some(flattened) =
+                trace::get_flattened_trace(tx.clone(), self.provider.clone()).await
+            else {
+                return Ok(false);
+            };
+            let Some(input) = flattened.get(&touches) else {
+                return Ok(false);
+            };
+            if let Some(expected) = self.args.trace_data.as_deref() {
+                if expected != hex::encode(input) {
+                    return Ok(false);
+                }
+            }
+            if let Some(sel) = &self.trace_sig {
+                if !input.starts_with(sel) {
+                    return Ok(false);
+                }
+            }
+        }
+
+        print_output(self.args.output, tx)?;
+        if let Some(n) = self.args.n {
+            self.count += 1;
+            if self.count >= n {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+async fn pending_stream<'a>(
+    provider: &'a Provider<Ws>,
+    legacy: bool,
+) -> Result<BoxStream<'a, Transaction>> {
+    if legacy {
+        let p = provider.clone();
+        let stream = provider
+            .subscribe_pending_txs()
+            .await?
+            .map(move |hash| {
+                let p = p.clone();
+                async move { retry_get_tx(&p, hash).await }
+            })
+            .buffer_unordered(FETCH_CONCURRENCY)
+            .filter_map(|r| async move {
+                match r {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("get_transaction failed, skipping: {e}");
+                        None
+                    }
+                }
+            })
+            .boxed();
+        Ok(stream)
+    } else {
+        Ok(provider.subscribe_full_pending_txs().await?.boxed())
+    }
+}
+
+async fn run_tx(args: TxArgs) -> Result<()> {
+    let filters = build_filters(&args)?;
+    let trace_sig = args
+        .trace_sig
+        .as_deref()
+        .map(|s| HumanReadableParser::parse_function(s).map(|f| f.short_signature()))
+        .transpose()?;
+    let provider = Provider::<Ws>::connect(&args.rpc.rpc_url).await?;
+
+    let pending = pending_stream(&provider, args.rpc.legacy).await?;
+    let mut blocks = provider.subscribe_blocks().await?;
+    let mut seen = Seen::new(SEEN_CAPACITY);
+    let mut rt = Runtime {
+        args,
+        filters,
+        trace_sig,
+        provider: provider.clone(),
+        count: 0,
+    };
+
+    tokio::pin!(pending);
+    loop {
+        tokio::select! {
+            Some(tx) = pending.next() => {
+                seen.insert(tx.hash);
+                if rt.process(&tx).await? { return Ok(()); }
+            }
+            Some(block) = blocks.next() => {
+                if !rt.args.confirmed { continue; }
+                let Some(num) = block.number else { continue };
+                let Some(block) = rt.provider.get_block_with_txs(num).await? else { continue };
+                for tx in block.transactions {
+                    if seen.contains(&tx.hash) { continue; }
+                    if rt.process(&tx).await? { return Ok(()); }
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Read .env file
+async fn main() -> Result<()> {
     dotenv::dotenv().ok();
-    let args = App::parse();
-    // Connect to rpc url
-    match args.command {
-        WithBlock(_args) => {
-            //let mut filters = Filters:
-            //let provider = Provider::<Ws>::connect(args.rpc.rpc_url).await.unwrap();
-            //let block = provider.get_block(ethers::types::BlockNumber::Latest).await?;
-            //match block {
-            //None => println!("No block found"),
-            //Some(block) => {
-            //filter.apply()
-            //},
-            //}
-        }
-        Tx(args) => {
-            let mut filters = Filters::new();
-            add_optional_filter(&mut filters, args.from, |v| {
-                Box::new(filters::equality::FromFilter::new(v))
-            });
-            add_optional_filter(&mut filters, args.to, |v| {
-                Box::new(filters::equality::ToFilter::new(v))
-            });
-            add_optional_filter(&mut filters, args.value, |v| {
-                Box::new(filters::equality::ValueFilter::new(v))
-            });
-            add_optional_filter(&mut filters, args.nonce, |v| {
-                Box::new(filters::equality::NonceFilter::new(v))
-            });
-            add_optional_filter(&mut filters, args.tip, |v| {
-                Box::new(filters::equality::TipFilter::new(v))
-            });
-            add_optional_filter(&mut filters, args.gas_price, |v| {
-                Box::new(filters::equality::GasPriceFilter::new(v))
-            });
-
-            add_range_filter(&mut filters, args.value_gt, args.value_lt, |gt, lt| {
-                Box::new(filters::range::ValueRangeFilter::new(gt, lt))
-            });
-            add_range_filter(&mut filters, args.nonce_gt, args.nonce_lt, |gt, lt| {
-                Box::new(filters::range::NonceRangeFilter::new(gt, lt))
-            });
-            add_range_filter(&mut filters, args.tip_gt, args.tip_lt, |gt, lt| {
-                Box::new(filters::range::TipRangeFilter::new(gt, lt))
-            });
-            add_range_filter(
-                &mut filters,
-                args.gas_price_gt,
-                args.gas_price_lt,
-                |gt, lt| Box::new(filters::range::GasPriceRangeFilter::new(gt, lt)),
-            );
-
-            if let Some(sig) = &args.sig {
-                let sig = HumanReadableParser::parse_function(sig)?.short_signature();
-                filters.add_filter(Box::new(filters::calldata::SigFilter::new(sig)));
-            }
-            if let Some(data) = &args.data {
-                let data = hex::decode(data)?;
-                filters.add_filter(Box::new(filters::calldata::DataFilter::new(data)));
-            }
-            if let Some(re) = &args.data_re {
-                filters.add_filter(Box::new(filters::calldata::RegexFilter::new(re)));
-            }
-
-            let provider = Provider::<Ws>::connect(args.rpc.rpc_url.clone())
-                .await
-                .unwrap();
-            let mut count: u64 = 0;
-            if args.rpc.legacy {
-                let mut stream = provider.subscribe_pending_txs().await?;
-                loop {
-                    let txn_hash = stream.next().await;
-                    let txn = provider.get_transaction(txn_hash.unwrap()).await?;
-                    if let Some(txn) = txn {
-                        process_transaction(txn, &args, &mut filters, &provider, &mut count)
-                            .await?;
-                    }
-                }
-            } else {
-                let mut stream = provider.subscribe_full_pending_txs().await?.map(|tx| tx).boxed();
-                let mut blockstream = provider.subscribe_blocks().await?;
-                let mut seen_txns = std::collections::HashSet::new();
-                loop {
-                    tokio::select! {
-                        Some(txn) = stream.next() => {
-                            seen_txns.insert(txn.hash);
-                            process_transaction(txn, &args, &mut filters, &provider, &mut count).await?;
-                        }
-                        Some(block) = blockstream.next() => {
-                            if args.confirmed {
-                                let block = provider.get_block_with_txs(block.number.unwrap()).await?;
-                                if let Some(block) = block {
-                                    for txn in block.transactions {
-                                        if !seen_txns.contains(&txn.hash) {
-                                            process_transaction(txn, &args, &mut filters, &provider, &mut count)
-                                                .await?;
-                                        }
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
+    match App::parse().command {
+        Command::Tx(args) => run_tx(args).await,
     }
-    Ok(())
 }

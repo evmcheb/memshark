@@ -2,18 +2,13 @@ use std::str::FromStr;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use ethers::types::{Address, U256, U64};
+use ethers::{
+    types::{Address, U256},
+    utils::hex,
+};
 
 use eyre::Result;
 
-/// parse a hex str or decimal str as U256
-fn parse_u64(s: &str) -> Result<U64> {
-    Ok(if s.starts_with("0x") {
-        U64::from_str(s)?
-    } else {
-        U64::from_dec_str(s)?
-    })
-}
 fn parse_u256(s: &str) -> Result<U256> {
     Ok(if s.starts_with("0x") {
         U256::from_str(s)?
@@ -21,20 +16,22 @@ fn parse_u256(s: &str) -> Result<U256> {
         U256::from_dec_str(s)?
     })
 }
+
 fn parse_gwei(s: &str) -> Result<U256> {
-    // string to float
     let f = s.parse::<f64>()?;
-    // float to gwei
-    let g = f * 1e9;
-    // convert to u256
-    Ok(U256::from(g as u64))
+    Ok(U256::from((f * 1e9) as u64))
 }
 
 pub fn strip_0x_prefix(s: &str) -> Result<String, &'static str> {
     Ok(s.strip_prefix("0x").unwrap_or(s).to_string())
 }
 
-/// Here's my app!
+fn parse_selector(s: &str) -> Result<[u8; 4]> {
+    let bytes = hex::decode(s.strip_prefix("0x").unwrap_or(s))?;
+    <[u8; 4]>::try_from(bytes.as_slice())
+        .map_err(|_| eyre::eyre!("selector must be exactly 4 bytes (8 hex chars)"))
+}
+
 #[derive(Debug, Parser)]
 #[clap(name = "shark", version)]
 pub struct App {
@@ -73,6 +70,8 @@ pub struct TxArgs {
 
     #[clap(long, short)]
     pub sig: Option<String>,
+    #[clap(long, value_parser=parse_selector, conflicts_with_all=&["sig"])]
+    pub selector: Option<[u8; 4]>,
     #[clap(long, short, value_parser=strip_0x_prefix, conflicts_with_all=&["data_re"])]
     pub data: Option<String>,
     #[clap(long)]
@@ -120,19 +119,7 @@ pub struct TxArgs {
     pub output: OutputMode,
 }
 
-#[derive(Debug, Args)]
-pub struct BlockArgs {
-    #[clap(long, short, value_parser=parse_u64)]
-    pub number: Option<U64>,
-
-    #[clap(flatten)]
-    pub rpc: RpcOpts,
-}
-
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Help message for read.
-    #[clap(name = "block")]
-    WithBlock(BlockArgs),
     Tx(TxArgs),
 }

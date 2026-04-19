@@ -1,50 +1,30 @@
-pub mod equality;
-#[macro_use]
-pub mod range;
-pub mod calldata;
 use ethers::types::Transaction;
 
-pub trait Filter {
-    fn apply(&self, tx: &Transaction) -> bool;
-}
+pub type Pred = Box<dyn Fn(&Transaction) -> bool + Send + Sync>;
 
-pub struct Filters {
-    filters: Vec<Box<dyn Filter>>,
-}
+#[derive(Default)]
+pub struct Filters(Vec<Pred>);
 
 impl Filters {
-    pub fn new() -> Self {
-        Filters {
-            filters: Vec::new(),
-        }
-    }
-
-    pub fn add_filter(&mut self, filter: Box<dyn Filter>) {
-        self.filters.push(filter);
+    pub fn push(&mut self, f: impl Fn(&Transaction) -> bool + Send + Sync + 'static) {
+        self.0.push(Box::new(f));
     }
 
     pub fn apply(&self, tx: &Transaction) -> bool {
-        self.filters.iter().all(|filter| filter.apply(tx))
+        self.0.iter().all(|f| f(tx))
     }
 }
 
-pub fn add_optional_filter<T: 'static>(
-    filters: &mut Filters,
-    opt_value: Option<T>,
-    factory: impl Fn(T) -> Box<dyn Filter>,
-) {
-    if let Some(value) = opt_value {
-        filters.add_filter(factory(value));
+pub fn range<T, F>(filters: &mut Filters, gt: Option<T>, lt: Option<T>, extract: F)
+where
+    T: PartialOrd + Copy + Send + Sync + 'static,
+    F: Fn(&Transaction) -> Option<T> + Send + Sync + 'static,
+{
+    if gt.is_none() && lt.is_none() {
+        return;
     }
-}
-
-pub fn add_range_filter<T: 'static>(
-    filters: &mut Filters,
-    opt_gt: Option<T>,
-    opt_lt: Option<T>,
-    factory: impl Fn(Option<T>, Option<T>) -> Box<dyn Filter>,
-) {
-    if opt_gt.is_some() || opt_lt.is_some() {
-        filters.add_filter(factory(opt_gt, opt_lt));
-    }
+    filters.push(move |tx| {
+        let Some(v) = extract(tx) else { return false };
+        gt.is_none_or(|g| v >= g) && lt.is_none_or(|l| v <= l)
+    });
 }
